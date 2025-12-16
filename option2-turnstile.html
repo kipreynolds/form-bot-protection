@@ -1,0 +1,146 @@
+<script runat=server>
+  var cspJs = Platform.Function.GUID();
+  Platform.Variable.SetValue("@CSPJavascriptGUID",cspJs);
+  var cspCss = Platform.Function.GUID();
+  Platform.Variable.SetValue("@CSPStyleGUID",cspCss);
+
+  Platform.Response.SetResponseHeader("Access-Control-Allow-Origin", "*");
+  Platform.Response.SetResponseHeader('Strict-Transport-Security', 'max-age=200');
+  Platform.Response.SetResponseHeader('X-XSS-Protection', '1; mode=block');
+  Platform.Response.SetResponseHeader('X-Frame-Options', 'Deny');
+  Platform.Response.SetResponseHeader('X-Content-Type-Options', 'nosniff');
+  Platform.Response.SetResponseHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  Platform.Response.SetResponseHeader('Content-Security-Policy', "default-src 'self' challenges.cloudflare.com; script-src 'nonce-"+  cspJs +"' challenges.cloudflare.com; style-src 'nonce-"+ cspCss +"'");
+
+  var debug = false;
+  var debugOutput = {};
+
+  var method = Platform.Request.Method;
+  Platform.Variable.SetValue("@httpMethod",method);
+  debugOutput.method = method;
+  var userIp = Platform.Request.ClientIP;
+  debugOutput.IP = userIp;
+
+  try {
+    if (method == 'POST') {
+      var secret = '{{ secret_key_here }}'; // <--- need secret key here
+      var endpoint = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+      var turnstileRespToken = Platform.Request.GetFormField('cf-turnstile-response');
+      debugOutput.submittedToken = turnstileRespToken;
+
+      var req = new Script.Util.HttpRequest(endpoint);
+          req.retries = 2;
+          req.emptyContentHandling = 0;
+          req.continueOnError = true;
+          req.method = 'POST';
+          req.contentType = 'application/json';
+          req.encoding = 'UTF-8';
+
+          req.postData = Platform.Function.Stringify({
+            "secret": secret,
+            "response": turnstileRespToken,
+            "remoteip": userIp
+          });
+
+      var res = req.send();
+
+      var data = Platform.Function.ParseJSON('' + res.content);
+      debugOutput.turnstileResponse = data;
+      
+      if(!data.success) throw 'Error: ' + data['error-codes'].join('|');
+
+      Platform.Variable.SetValue('@overallResult','success');
+
+    }
+
+  } catch(err){
+    Platform.Variable.SetValue('@overallResult','error');
+    debugOutput.error = err;
+  }
+
+  if(debug){
+    Platform.Response.Write(Platform.Function.Stringify(debugOutput));
+  }
+</script>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title>Turnstile &dash; Demo</title>
+%%[ IF @httpMethod == "GET" THEN ]%%
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=_turnstileCb" defer></script>
+%%[ ENDIF ]%%
+<style nonce="%%=v(@CSPStyleGUID)=%%">
+html,
+body {
+  height: 100%;
+}
+
+body {
+  display: flex;
+  align-items: center;
+  padding-top: 40px;
+  padding-bottom: 40px;
+  background-color: #fefefe;
+}
+
+.form-signin {
+  width: 100%;
+  max-width: 330px;
+  padding: 15px;
+  margin: auto;
+}
+
+.form-signin .checkbox {
+  font-weight: 400;
+}
+
+.form-signin .form-floating:focus-within {
+  z-index: 2;
+}
+
+.form-signin input[type="text"] {
+  margin-bottom: -1px;
+  border-bottom-right-radius: 0;
+  border-bottom-left-radius: 0;
+}
+</style>
+</head>
+<body>
+<main class="form-signin">
+  %%[ IF @httpMethod == "GET" THEN ]%%
+  <form method="POST" action="%%=RequestParameter('PageURL')=%%">
+    <h2 class="h3 mb-3 fw-normal">Turnstile &dash; Demo</h2>
+    <div class="form-row">
+      <div class="form-input">
+        <label for="FirstName">First Name</label>
+        <br><input type="text" id="FirstName" name="FirstName" title="Please fill out this field." required>
+      </div>
+    </div>
+
+    <div class="checkbox mb-3">
+      <!-- The Turnstile widget will be injected in the following div. -->
+      <div id="myWidget"></div>
+      <!-- end. -->
+    </div>
+    <button class="w-100 btn btn-lg btn-primary" type="submit">Sign up</button>
+  </form>
+  %%[ ELSE ]%%
+  <p>%%=IIF(EMPTY(@overallResult) OR @overallResult == "error","We're sorry. We weren't able to complete your submission at this time","Success! Your submission has been received")=%%</p>
+  %%[ ENDIF ]%%
+</main>
+%%[ IF @httpMethod == "GET" THEN ]%%
+<script nonce="%%=v(@CSPJavascriptGUID)=%%">
+// This function is called when the Turnstile script is loaded and ready to be used.
+// The function name matches the "onload=..." parameter.
+function _turnstileCb() {
+    console.debug('_turnstileCb called');
+
+    turnstile.render('#myWidget', {
+      sitekey: '{{ site_key_here }}', // <--- need site key here
+      theme: 'light',
+    });
+}
+</script>
+%%[ ENDIF ]%%
+</body>
+</html>
