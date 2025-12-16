@@ -16,8 +16,8 @@ IF @IsSubmit THEN
 
   /* validate recaptcha */
   SET @token = RequestParameter("recaptcha-response")
-  SET @secret = 'secret_key_here' /* <--- need secret key here */
-  SET @validate_url = Concat('https://www.google.com/recaptcha/api/siteverify?secret=', URLEncode(@secret, 1, 1), '&response=', URLEncode(@token, 1, 1));
+  SET @secret = "{{ secret_key_here }}" /* <--- need secret key here */
+  SET @validate_url = Concat("https://www.google.com/recaptcha/api/siteverify?secret=", URLEncode(@secret, 1, 1), "&response=", URLEncode(@token, 1, 1));
   SET @validate_response = HTTPGet(@validate_url, false, 1, @validate_status)
   SET @debugOutput = Concat(@debugOutput,"<br>Validate Status: ", @validate_status)
 
@@ -47,7 +47,7 @@ ENDIF
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     %%[ IF @IsSubmit == FALSE THEN ]%%
-    %%=Concat('<','script type="text/javascript"','>')=%%
+   <script type="text/javascript">
       const verifyCallback = function(response) { /* this gets called once the user has completed the challenge */
         document.getElementById('recaptcha-response').value = response; /* add the token to the invisible input so it can be passed to the processing page */
         document.getElementById('submit-button').removeAttribute('disabled'); /* enable the form's submit button */
@@ -59,7 +59,7 @@ ENDIF
           'callback' : verifyCallback
         });
       };
-    %%=Concat('</','script','>')=%% 
+    </script>
     %%[ ENDIF ]%%
   </head>
   <body>
