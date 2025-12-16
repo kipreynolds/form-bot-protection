@@ -1,1 +1,1 @@
-# form-bot-protection
+# Protect forms from bot submissions
