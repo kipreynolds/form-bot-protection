@@ -1,0 +1,97 @@
+%%[
+/* Config */
+VAR @debug, @debugOutput
+SET @debug = FALSE
+SET @SuccessMessage = "Success! Your submission has been received"
+SET @ErrorMessage = "We're sorry. We weren't able to complete your submission at this time"
+
+/* Detect Form Submit */
+SET @IsSubmit = IIF(RequestParameter("submit-button") == "Submit", 1, 0)
+SET @debugOutput = Concat("IsSubmit: ", @IsSubmit)
+
+IF @IsSubmit THEN
+
+  SET @FirstName = RequestParameter("FirstName")
+  SET @debugOutput = Concat(@debugOutput,"<br>FirstName: ", @FirstName)
+
+  /* validate recaptcha */
+  SET @token = RequestParameter("recaptcha-response")
+  SET @secret = 'secret_key_here' /* <--- need secret key here */
+  SET @validate_url = Concat('https://www.google.com/recaptcha/api/siteverify?secret=', URLEncode(@secret, 1, 1), '&response=', URLEncode(@token, 1, 1));
+  SET @validate_response = HTTPGet(@validate_url, false, 1, @validate_status)
+  SET @debugOutput = Concat(@debugOutput,"<br>Validate Status: ", @validate_status)
+
+  /* 
+    Check for validation errors.  HTTPGet() function status:
+      A value of 0 indicates status is OK.
+      A value of -1 indicates a missing URL.
+      A value of -2 indicates an HTTP request error.
+      A value of -3 indicates empty content (the function completed successfully but did not return any content).
+  */
+  SET @Validation_Error = 0
+  IF @validate_status == 0 THEN
+    /* check for "success" value of "true" in returned JSON */
+    IF IndexOf(@validate_response, '"success": true') == 0 THEN
+      SET @Validation_Error = 1
+    ENDIF
+  ELSE
+    SET @Validation_Error = 1
+  ENDIF
+  SET @debugOutput = Concat(@debugOutput,"<br>Validation Error: ", @Validation_Error)
+ENDIF
+]%%
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    %%[ IF @IsSubmit == FALSE THEN ]%%
+    %%=Concat('<','script type="text/javascript"','>')=%%
+      const verifyCallback = function(response) { /* this gets called once the user has completed the challenge */
+        document.getElementById('recaptcha-response').value = response; /* add the token to the invisible input so it can be passed to the processing page */
+        document.getElementById('submit-button').removeAttribute('disabled'); /* enable the form's submit button */
+      };
+
+      const onloadCallback = function() {
+        grecaptcha.render('recaptcha_element', {
+          'sitekey' : '{{ site_key_here }}', /* <--- need site key here */
+          'callback' : verifyCallback
+        });
+      };
+    %%=Concat('</','script','>')=%% 
+    %%[ ENDIF ]%%
+  </head>
+  <body>
+    %%[ IF @debug THEN Output(v(@debugOutput)) ENDIF]%%
+    <div id="myform">
+      %%[ IF @IsSubmit == FALSE THEN ]%%
+      <form id="myform" action="%%=RequestParameter('PageUrl')=%%" method="POST">
+        <div class="form-row">
+          <div class="form-input">
+            <label for="FirstName">First Name</label>
+            <br><input type="text" id="FirstName" name="FirstName" title="Please fill out this field." required>
+          </div>
+        </div>
+        <div class="form-row">
+          <div id="form-recaptcha">
+            <div id="recaptcha_element"></div>
+            <input type="hidden" id="recaptcha-response" name="recaptcha-response" value="">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-submit">
+            <input id="submit-button" name="submit-button" type="submit" value="Submit" disabled>
+          </div>
+        </div>
+      </form>
+      %%[ ELSE ]%%
+      <p>%%=IIF(@Validation_Error,@ErrorMessage,@SuccessMessage)=%%</p>
+      %%[ ENDIF ]%%
+      
+      %%[ IF @IsSubmit == FALSE THEN ]%%
+      <script src="https://www.google.com/recaptcha/api.js?onload=onloadCallback&render=explicit" async defer></script>
+      %%[ ENDIF ]%%
+    </div>
+  </body>
+</html>
